@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mgn-automation-api
+  namespace: mgn-factory-prod
+  labels:
+    app: mgn-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: mgn-api
+  template:
+    metadata:
+      labels:
+        app: mgn-api
+    spec:
+      serviceAccountName: mgn-orchestrator-sa # IRSA for MGN Access
+      containers:
+      - name: gateway
+        image: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/devopstrio/mgn-automation-api:v1.0.0
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: mgn-secrets
+              key: db-url
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mgn-api-svc
+  namespace: mgn-factory-prod
+spec:
+  selector:
+    app: mgn-api
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8000
+  type: LoadBalancer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: discovery-engine
+  namespace: mgn-factory-prod
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      component: discovery-engine
+  template:
+    metadata:
+      labels:
+        component: discovery-engine
+    spec:
+      containers:
+      - name: worker
+        image: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/devopstrio/discovery-engine:latest
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mgn-ingress
+  namespace: mgn-factory-prod
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+spec:
+  rules:
+  - host: migration.devopstrio.co.uk
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: mgn-api-svc
+            port:
+              number: 80
